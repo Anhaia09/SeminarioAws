@@ -1,0 +1,244 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Template para o Grafana'
+
+Parameters:
+  # Parâmetros de rede
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC onde o serviço ECS será implantado
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Primeira subnet pública para o ALB
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Segunda subnet pública para o ALB
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Primeira subnet privada para tarefas ECS
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Segunda subnet privada para tarefas ECS
+
+  # Parâmetros da aplicação
+  ServiceName:
+    Type: String
+    Default: grafana
+    Description: Nome do serviço ECS
+
+  ContainerPort:
+    Type: Number
+    Default: 3000
+    Description: Porta que a aplicação escuta no container
+
+  ContainerImage:
+    Type: String
+    Description: Imagem Docker para o container (use sua imagem da API)
+
+  ContainerCpu:
+    Type: Number
+    Default: 256
+    Description: Unidades de CPU alocadas para o container (1024 = 1 vCPU)
+
+  ContainerMemory:
+    Type: Number
+    Default: 512
+    Description: Memória alocada para o container em MB
+
+  DesiredCount:
+    Type: Number
+    Default: 2
+    Description: Número desejado de tarefas em execução
+
+  ECSTaskExecutionRole:
+      Type: String
+      Description: ARN do IAM Role para execução de tarefas ECS
+
+  ECSTaskRole:
+      Type: String
+      Description: ARN do IAM Role para tarefas ECS
+
+  
+
+Resources:  
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: seminario
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  ALBSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Security Group para o ALB
+        VpcId: !Ref VpcId
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
+        SecurityGroupEgress:
+          - IpProtocol: -1  
+            FromPort: 0
+            ToPort: 0
+            CidrIp: 0.0.0.0/0
+
+  # Security Group para as tasks do ECS
+  GrafanaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group para Grafana
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+      - IpProtocol: -1  
+        FromPort: 0
+        ToPort: 0
+        CidrIp: 0.0.0.0/0
+
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ServiceName}-api
+      RetentionInDays: 7  
+  # Substituir a seção TaskDefinitionGrafana:
+  TaskDefinitionGrafana:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ServiceName}
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      ContainerDefinitions:
+        - Name: grafana-container
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+          Environment:
+          # CORREÇÃO: Usar GetAtt para obter o DNS do ALB
+          - Name: GF_SERVER_ROOT_URL
+            Value: !Sub "http://${ALB.DNSName}"
+          - Name: GF_SERVER_DOMAIN
+            Value: !GetAtt ALB.DNSName
+          # CORREÇÃO: Configurações adequadas para ALB
+          - Name: GF_AUTH_COOKIE_SAMESITE
+            Value: "lax"
+          - Name: GF_AUTH_COOKIE_SECURE
+            Value: "false"
+          - Name: GF_AUTH_ANONYMOUS_ENABLED
+            Value: "true"
+          # Adicionar configurações importantes
+          - Name: GF_SERVER_SERVE_FROM_SUB_PATH
+            Value: "false"
+          - Name: GF_LOG_LEVEL
+            Value: "debug"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub /ecs/${ServiceName}-api
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+  
+# Application Load Balancer para rotear o tráfego para o serviço
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ServiceName}-alb
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+
+  # CORREÇÃO: Target Group com health check correto
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ServiceName}-tg
+      VpcId: !Ref VpcId
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      # CORREÇÃO: Health check path correto para Grafana
+      HealthCheckPath: /api/health
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      # CORREÇÃO: Matcher adequado para Grafana
+      Matcher:
+        HttpCode: 200
+
+  # Listener para o ALB
+  ALBListener:
+    DependsOn: TargetGroup
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  GrafanaService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      ServiceName: !Sub ${ServiceName}-api
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinitionGrafana
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref GrafanaSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroup
+          ContainerName: grafana-container
+          ContainerPort: !Ref ContainerPort
+
+# Adicionar Output para facilitar acesso
+Outputs:
+  GrafanaURL:
+    Description: URL do Grafana
+    Value: !Sub "http://${ALB.DNSName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-GrafanaURL"
+      
+  LoadBalancerDNS:
+    Description: DNS do Load Balancer
+    Value: !GetAtt ALB.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-LoadBalancerDNS"

@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Template para criar Bancos RDS e DynamoDB'
+
+Parameters:
+  # Parâmetros de rede
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC onde o serviço ECS será implantado
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Primeira subnet privada para tarefas ECS
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Segunda subnet privada para tarefas ECS
+
+Resources:  
+ 
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: rds-instance
+      Engine: postgres
+      EngineVersion: "16"
+      DBInstanceClass: db.t3.micro
+      StorageType: gp2 
+      AllocatedStorage: 20
+      MasterUsername: postgres
+      MasterUserPassword: postgres123
+      VPCSecurityGroups:
+        - Default
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      MultiAZ: false
+      DeleteAutomatedBackups: true
+      DeletionProtection: false
+      DBName: rawdatadb
+
+
+Outputs:
+  DBHost:
+    Description: Host do banco de dados
+    Value: !GetAtt DBInstance.Endpoint.Address
