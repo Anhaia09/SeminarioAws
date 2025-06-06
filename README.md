@@ -75,3 +75,45 @@ Este projeto demonstra uma arquitetura baseada em serviços gerenciados da AWS c
 - Amazon CloudWatch
 - Grafana
 - CloudFormation
+
+---
+
+## ✍️ Autores
+<div align="center">
+<table>
+  <tr>
+<td align="center">
+      <a href="https://github.com/GabrielPerosa">
+        <img src="https://avatars.githubusercontent.com/u/159202121?v=4" width="70px;" alt="Gabriel Perosa"/><br>
+        <sub>
+          <b>Gabriel Perosa</b>
+        </sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/GBrizola">
+        <img src=https://avatars.githubusercontent.com/u/158374028?v=4 width="70px;" alt="Gabriel Brizola"/><br>
+        <sub>
+          <b>Gabriel Brizola</b>
+        </sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Giovani-RodriguesS">
+        <img src="https://avatars.githubusercontent.com/u/121878338?v=4" width="70px;" alt="Giovani Rodrigues"/><br>
+        <sub>
+          <b>Giovani Rodrigues</b>
+        </sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Anhaia09">
+        <img src="https://avatars.githubusercontent.com/u/159202049?v=4" width="70px;" alt="Letícia Anhaia"/><br>
+        <sub>
+          <b>Letícia Anhaia</b>
+        </sub>
+      </a>
+    </td>
+  </tr>
+</table>
+</div>
